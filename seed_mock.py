@@ -1,0 +1,165 @@
+"""Seed mock data into Neo4j Layer 5.
+
+Replaces A1-A4 pipeline output for direct BE/BEv/BP development and testing.
+
+Seeds:
+  - Episode nodes (CONFIRMED) → consumed by BEv extractor (B2)
+  - ResolvedEntity nodes       → consumed by BE extractor (B3)
+  - MotifSequence nodes        → consumed by BP extractor (B4)
+"""
+
+from db import get_session
+
+GRAPH_NAME = "mobius_graph"
+
+EPISODES = [
+    # FRAUD_SEQUENCE cluster → maps to FRAUDULENT_COORDINATION BEv
+    {"episode_id": "EP-001", "episode_type": "FRAUD_SEQUENCE",     "status": "CONFIRMED", "first_seen": "2025-01-01T00:00:00", "last_seen": "2025-01-02T00:00:00"},
+    {"episode_id": "EP-002", "episode_type": "FRAUD_SEQUENCE",     "status": "CONFIRMED", "first_seen": "2025-01-03T00:00:00", "last_seen": "2025-01-04T00:00:00"},
+    {"episode_id": "EP-003", "episode_type": "FRAUD_SEQUENCE",     "status": "CONFIRMED", "first_seen": "2025-01-05T00:00:00", "last_seen": "2025-01-06T00:00:00"},
+    # WASH_TRADING cluster → maps to CIRCULAR_VALUE_TRANSFER BEv
+    {"episode_id": "EP-004", "episode_type": "WASH_TRADING",       "status": "CONFIRMED", "first_seen": "2025-01-07T00:00:00", "last_seen": "2025-01-08T00:00:00"},
+    {"episode_id": "EP-005", "episode_type": "WASH_TRADING",       "status": "CONFIRMED", "first_seen": "2025-01-09T00:00:00", "last_seen": "2025-01-10T00:00:00"},
+    # COORDINATED_RATING → maps to COORDINATED_MANIPULATION BEv
+    {"episode_id": "EP-006", "episode_type": "COORDINATED_RATING", "status": "CONFIRMED", "first_seen": "2025-01-11T00:00:00", "last_seen": "2025-01-12T00:00:00"},
+    # PENDING — should NOT be promoted (not CONFIRMED)
+    {"episode_id": "EP-007", "episode_type": "FRAUD_SEQUENCE",     "status": "PENDING",   "first_seen": "2025-01-13T00:00:00", "last_seen": "2025-01-14T00:00:00"},
+    # DATA_EXFILTRATION → maps to UNAUTHORIZED_DATA_FLOW BEv
+    {"episode_id": "EP-008", "episode_type": "DATA_EXFILTRATION",  "status": "CONFIRMED", "first_seen": "2025-01-15T00:00:00", "last_seen": "2025-01-16T00:00:00"},
+    {"episode_id": "EP-009", "episode_type": "DATA_EXFILTRATION",  "status": "CONFIRMED", "first_seen": "2025-01-17T00:00:00", "last_seen": "2025-01-18T00:00:00"},
+    {"episode_id": "EP-010", "episode_type": "DATA_EXFILTRATION",  "status": "CONFIRMED", "first_seen": "2025-01-19T00:00:00", "last_seen": "2025-01-20T00:00:00"},
+]
+
+ENTITIES = [
+    # Passes all 4 criteria → should promote to BE
+    {
+        "entity_id": "ENT-001", "canonical_id": "user_alice", "role": "INITIATOR",
+        "identity_confidence": 0.95, "window_count": 5, "partition_count": 3, "episode_count": 4,
+        "first_seen": "2025-01-01T00:00:00", "last_seen": "2025-01-20T00:00:00",
+    },
+    {
+        "entity_id": "ENT-002", "canonical_id": "user_bob", "role": "INTERMEDIARY",
+        "identity_confidence": 0.88, "window_count": 4, "partition_count": 2, "episode_count": 3,
+        "first_seen": "2025-01-03T00:00:00", "last_seen": "2025-01-18T00:00:00",
+    },
+    {
+        "entity_id": "ENT-003", "canonical_id": "service_payments", "role": "TARGET",
+        "identity_confidence": 0.92, "window_count": 6, "partition_count": 4, "episode_count": 5,
+        "first_seen": "2025-01-01T00:00:00", "last_seen": "2025-01-20T00:00:00",
+    },
+    # Fails confidence → should NOT promote
+    {
+        "entity_id": "ENT-004", "canonical_id": "user_anon_1", "role": "INITIATOR",
+        "identity_confidence": 0.55, "window_count": 3, "partition_count": 2, "episode_count": 2,
+        "first_seen": "2025-01-05T00:00:00", "last_seen": "2025-01-15T00:00:00",
+    },
+    # Fails window_count → should NOT promote
+    {
+        "entity_id": "ENT-005", "canonical_id": "user_temp", "role": "OBSERVER",
+        "identity_confidence": 0.90, "window_count": 1, "partition_count": 2, "episode_count": 2,
+        "first_seen": "2025-01-10T00:00:00", "last_seen": "2025-01-11T00:00:00",
+    },
+]
+
+MOTIF_SEQUENCES = [
+    # Stable FAN_OUT→TRIANGLE pattern repeated 6 times → should promote to BP
+    {
+        "seq_id": "SEQ-001", "pattern_signature": "FAN_OUT->TRIANGLE->CHAIN",
+        "steps": ["FAN_OUT", "TRIANGLE", "CHAIN"],
+        "episode_count": 3, "first_seen": "2025-01-01T00:00:00", "last_seen": "2025-01-10T00:00:00",
+    },
+    {
+        "seq_id": "SEQ-002", "pattern_signature": "FAN_OUT->TRIANGLE->CHAIN",
+        "steps": ["FAN_OUT", "TRIANGLE", "CHAIN"],
+        "episode_count": 3, "first_seen": "2025-01-11T00:00:00", "last_seen": "2025-01-20T00:00:00",
+    },
+    # Unstable pattern (only 2 episodes) → should NOT promote
+    {
+        "seq_id": "SEQ-003", "pattern_signature": "CHAIN->CHAIN",
+        "steps": ["CHAIN", "CHAIN"],
+        "episode_count": 2, "first_seen": "2025-01-05T00:00:00", "last_seen": "2025-01-06T00:00:00",
+    },
+    # Another stable pattern
+    {
+        "seq_id": "SEQ-004", "pattern_signature": "FAN_OUT->FAN_OUT->TRIANGLE",
+        "steps": ["FAN_OUT", "FAN_OUT", "TRIANGLE"],
+        "episode_count": 3, "first_seen": "2025-01-02T00:00:00", "last_seen": "2025-01-08T00:00:00",
+    },
+    {
+        "seq_id": "SEQ-005", "pattern_signature": "FAN_OUT->FAN_OUT->TRIANGLE",
+        "steps": ["FAN_OUT", "FAN_OUT", "TRIANGLE"],
+        "episode_count": 3, "first_seen": "2025-01-09T00:00:00", "last_seen": "2025-01-15T00:00:00",
+    },
+]
+
+
+def seed(graph_name: str = GRAPH_NAME):
+    with get_session() as session:
+        # Clear existing mock data for this graph
+        session.run("MATCH (e:Episode {graph_name: $g}) DETACH DELETE e",          g=graph_name)
+        session.run("MATCH (r:ResolvedEntity {graph_name: $g}) DETACH DELETE r",   g=graph_name)
+        session.run("MATCH (s:MotifSequence {graph_name: $g}) DETACH DELETE s",    g=graph_name)
+
+        for ep in EPISODES:
+            session.run(
+                """
+                CREATE (e:Episode {
+                    episode_id:   $episode_id,
+                    episode_type: $episode_type,
+                    status:       $status,
+                    first_seen:   $first_seen,
+                    last_seen:    $last_seen,
+                    graph_name:   $graph_name
+                })
+                """,
+                **ep, graph_name=graph_name,
+            )
+
+        for ent in ENTITIES:
+            session.run(
+                """
+                CREATE (r:ResolvedEntity {
+                    entity_id:          $entity_id,
+                    canonical_id:       $canonical_id,
+                    role:               $role,
+                    identity_confidence: $identity_confidence,
+                    window_count:       $window_count,
+                    partition_count:    $partition_count,
+                    episode_count:      $episode_count,
+                    first_seen:         $first_seen,
+                    last_seen:          $last_seen,
+                    graph_name:         $graph_name
+                })
+                """,
+                **ent, graph_name=graph_name,
+            )
+
+        for seq in MOTIF_SEQUENCES:
+            session.run(
+                """
+                CREATE (s:MotifSequence {
+                    seq_id:             $seq_id,
+                    pattern_signature:  $pattern_signature,
+                    steps:              $steps,
+                    episode_count:      $episode_count,
+                    first_seen:         $first_seen,
+                    last_seen:          $last_seen,
+                    graph_name:         $graph_name
+                })
+                """,
+                **seq, graph_name=graph_name,
+            )
+
+    return {
+        "episodes":  len(EPISODES),
+        "entities":  len(ENTITIES),
+        "sequences": len(MOTIF_SEQUENCES),
+        "graph_name": graph_name,
+    }
+
+
+if __name__ == "__main__":
+    from schema import init_schema
+    init_schema()
+    result = seed()
+    print("Seeded:", result)
