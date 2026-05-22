@@ -23,6 +23,12 @@ class ExtractBPRequest(BaseModel):
     transition_stability_threshold: float = 0.6  # transition prob must be ≥ this
 
 
+class ExtractBLRequest(BaseModel):
+    graph_name: str
+    min_recurrence_score: float = 0.7   # attractor must be this stable
+    min_epochs: int = 3                 # must appear across N epochs
+
+
 # ── Outputs ───────────────────────────────────────────────────────────────────
 
 class BEvNode(BaseModel):

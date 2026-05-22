@@ -13,6 +13,7 @@ Promotion criteria (all must pass):
 import uuid
 from db import get_session
 from models import ExtractBERequest, ExtractionResult
+from promotion_scorer import score_be, write_review_queue
 
 
 def extract_bes(req: ExtractBERequest) -> ExtractionResult:
@@ -54,7 +55,17 @@ def extract_bes(req: ExtractBERequest) -> ExtractionResult:
                 skipped += 1
                 continue
 
+            score = score_be(conf, windows, parts, eps, ent.get("role") or "")
             be_id = f"BE-{req.graph_name}-{uuid.uuid4().hex[:8]}"
+
+            if score["decision"] == "REVIEW":
+                write_review_queue(be_id, "BE", score["promotion_score"],
+                                   score["checklist_scores"], req.graph_name)
+                skipped += 1
+                continue
+            if score["decision"] == "SKIP":
+                skipped += 1
+                continue
 
             session.run(
                 """
@@ -67,6 +78,8 @@ def extract_bes(req: ExtractBERequest) -> ExtractionResult:
                     b.first_seen      = $first_seen,
                     b.last_seen       = $last_seen,
                     b.graph_name      = $graph_name,
+                    b.promotion_score = $promotion_score,
+                    b.checklist_scores = $checklist_scores,
                     b.promoted_at     = datetime()
                 """,
                 be_id=be_id,
@@ -78,6 +91,8 @@ def extract_bes(req: ExtractBERequest) -> ExtractionResult:
                 first_seen=ent.get("first_seen"),
                 last_seen=ent.get("last_seen"),
                 graph_name=req.graph_name,
+                promotion_score=score["promotion_score"],
+                checklist_scores=str(score["checklist_scores"]),
             )
 
             # Link source ResolvedEntity → BE
@@ -92,15 +107,17 @@ def extract_bes(req: ExtractBERequest) -> ExtractionResult:
             )
 
             promoted_nodes.append({
-                "be_id":          be_id,
-                "canonical_id":   ent["canonical_id"],
-                "role":           ent["role"],
-                "confidence":     conf,
+                "be_id":           be_id,
+                "canonical_id":    ent["canonical_id"],
+                "role":            ent["role"],
+                "confidence":      conf,
                 "partition_count": parts,
-                "episode_count":  eps,
-                "first_seen":     ent.get("first_seen"),
-                "last_seen":      ent.get("last_seen"),
-                "graph_name":     req.graph_name,
+                "episode_count":   eps,
+                "first_seen":      ent.get("first_seen"),
+                "last_seen":       ent.get("last_seen"),
+                "graph_name":      req.graph_name,
+                "promotion_score": score["promotion_score"],
+                "checklist_scores": score["checklist_scores"],
             })
 
     return ExtractionResult(

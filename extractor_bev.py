@@ -8,6 +8,7 @@ import uuid
 from db import get_session
 from archetype_map import episode_type_to_archetype
 from models import ExtractBEvRequest, ExtractionResult
+from promotion_scorer import score_bev, write_review_queue
 
 
 def extract_bevs(req: ExtractBEvRequest) -> ExtractionResult:
@@ -44,10 +45,22 @@ def extract_bevs(req: ExtractBEvRequest) -> ExtractionResult:
                 skipped += len(eps)
                 continue
 
+            source_ids = [e["episode_id"] for e in eps]
+            score = score_bev(archetype, len(eps), source_ids, req.graph_name)
+
             bev_id = f"BEv-{archetype}-{req.graph_name}-{uuid.uuid4().hex[:8]}"
+
+            if score["decision"] == "REVIEW":
+                write_review_queue(bev_id, "BEv", score["promotion_score"],
+                                   score["checklist_scores"], req.graph_name)
+                skipped += len(eps)
+                continue
+            if score["decision"] == "SKIP":
+                skipped += len(eps)
+                continue
+
             first_seen = min(e["first_seen"] for e in eps if e["first_seen"])
             last_seen  = max(e["last_seen"]  for e in eps if e["last_seen"])
-            source_ids = [e["episode_id"] for e in eps]
 
             # 3. Merge BEv node
             session.run(
@@ -59,6 +72,8 @@ def extract_bevs(req: ExtractBEvRequest) -> ExtractionResult:
                     b.last_seen          = $last_seen,
                     b.recurrence_count   = $recurrence_count,
                     b.source_episode_ids = $source_ids,
+                    b.promotion_score    = $promotion_score,
+                    b.checklist_scores   = $checklist_scores,
                     b.promoted_at        = datetime()
                 """,
                 bev_id=bev_id,
@@ -68,6 +83,8 @@ def extract_bevs(req: ExtractBEvRequest) -> ExtractionResult:
                 last_seen=last_seen,
                 recurrence_count=len(eps),
                 source_ids=source_ids,
+                promotion_score=score["promotion_score"],
+                checklist_scores=str(score["checklist_scores"]),
             )
 
             # 4. Link each source episode → BEv
@@ -90,6 +107,8 @@ def extract_bevs(req: ExtractBEvRequest) -> ExtractionResult:
                 "last_seen":          last_seen,
                 "graph_name":         req.graph_name,
                 "recurrence_count":   len(eps),
+                "promotion_score":    score["promotion_score"],
+                "checklist_scores":   score["checklist_scores"],
             })
 
     return ExtractionResult(

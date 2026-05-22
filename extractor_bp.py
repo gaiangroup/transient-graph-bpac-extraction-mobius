@@ -15,6 +15,7 @@ import json
 from collections import Counter
 from db import get_session
 from models import ExtractBPRequest, ExtractionResult
+from promotion_scorer import score_bp, write_review_queue
 
 
 def _compute_transitions(sequences: list[dict]) -> dict[str, float]:
@@ -78,12 +79,22 @@ def extract_bps(req: ExtractBPRequest) -> ExtractionResult:
 
             transitions = _compute_transitions(seqs)
 
-            # Stability check: all transitions must be >= threshold
             if transitions and min(transitions.values()) < req.transition_stability_threshold:
                 skipped += len(seqs)
                 continue
 
+            score = score_bp(total_episodes, transitions, sig)
             bp_id = f"BP-{req.graph_name}-{uuid.uuid4().hex[:8]}"
+
+            if score["decision"] == "REVIEW":
+                write_review_queue(bp_id, "BP", score["promotion_score"],
+                                   score["checklist_scores"], req.graph_name)
+                skipped += len(seqs)
+                continue
+            if score["decision"] == "SKIP":
+                skipped += len(seqs)
+                continue
+
             first_seen = min(s["first_seen"] for s in seqs if s.get("first_seen"))
             last_seen  = max(s["last_seen"]  for s in seqs if s.get("last_seen"))
 
@@ -96,6 +107,8 @@ def extract_bps(req: ExtractBPRequest) -> ExtractionResult:
                     b.first_seen               = $first_seen,
                     b.last_seen                = $last_seen,
                     b.graph_name               = $graph_name,
+                    b.promotion_score          = $promotion_score,
+                    b.checklist_scores         = $checklist_scores,
                     b.promoted_at              = datetime()
                 """,
                 bp_id=bp_id,
@@ -105,9 +118,10 @@ def extract_bps(req: ExtractBPRequest) -> ExtractionResult:
                 first_seen=first_seen,
                 last_seen=last_seen,
                 graph_name=req.graph_name,
+                promotion_score=score["promotion_score"],
+                checklist_scores=str(score["checklist_scores"]),
             )
 
-            # Link source sequences → BP
             for seq in seqs:
                 session.run(
                     """
@@ -120,13 +134,15 @@ def extract_bps(req: ExtractBPRequest) -> ExtractionResult:
                 )
 
             promoted_nodes.append({
-                "bp_id":                  bp_id,
-                "pattern_signature":      sig,
-                "episode_count":          total_episodes,
+                "bp_id":                   bp_id,
+                "pattern_signature":       sig,
+                "episode_count":           total_episodes,
                 "transition_probabilities": transitions,
-                "first_seen":             first_seen,
-                "last_seen":              last_seen,
-                "graph_name":             req.graph_name,
+                "first_seen":              first_seen,
+                "last_seen":               last_seen,
+                "graph_name":              req.graph_name,
+                "promotion_score":         score["promotion_score"],
+                "checklist_scores":        score["checklist_scores"],
             })
 
     return ExtractionResult(

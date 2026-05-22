@@ -1,11 +1,12 @@
 """Seed mock data into Neo4j Layer 5.
 
-Replaces A1-A4 pipeline output for direct BE/BEv/BP development and testing.
+Replaces A1-A4 and C3 pipeline output for direct BE/BEv/BP/BL development and testing.
 
 Seeds:
-  - Episode nodes (CONFIRMED) → consumed by BEv extractor (B2)
-  - ResolvedEntity nodes       → consumed by BE extractor (B3)
-  - MotifSequence nodes        → consumed by BP extractor (B4)
+  - Episode nodes (CONFIRMED)      → consumed by BEv extractor (B2)
+  - ResolvedEntity nodes            → consumed by BE extractor (B3)
+  - MotifSequence nodes             → consumed by BP extractor (B4)
+  - AttractorEpisodeType nodes      → consumed by BL extractor (AG-538)
 """
 
 from db import get_session
@@ -93,12 +94,55 @@ MOTIF_SEQUENCES = [
 ]
 
 
+ATTRACTOR_TYPES = [
+    # Passes all 4 criteria → should promote to BL
+    {
+        "type_id": "AT-001", "episode_type": "FRAUD_SEQUENCE",
+        "attractor": True, "recurrence_score": 0.92, "epoch_count": 5,
+        "affects_outcome": True,
+        "source_episode_ids": ["EP-001", "EP-002", "EP-003"],
+        "first_seen": "2025-01-01T00:00:00", "last_seen": "2025-01-20T00:00:00",
+    },
+    {
+        "type_id": "AT-002", "episode_type": "WASH_TRADING",
+        "attractor": True, "recurrence_score": 0.85, "epoch_count": 4,
+        "affects_outcome": True,
+        "source_episode_ids": ["EP-004", "EP-005"],
+        "first_seen": "2025-01-07T00:00:00", "last_seen": "2025-01-10T00:00:00",
+    },
+    {
+        "type_id": "AT-003", "episode_type": "DATA_EXFILTRATION",
+        "attractor": True, "recurrence_score": 0.78, "epoch_count": 3,
+        "affects_outcome": True,
+        "source_episode_ids": ["EP-008", "EP-009", "EP-010"],
+        "first_seen": "2025-01-15T00:00:00", "last_seen": "2025-01-20T00:00:00",
+    },
+    # Fails recurrence_score → should NOT promote
+    {
+        "type_id": "AT-004", "episode_type": "COORDINATED_RATING",
+        "attractor": True, "recurrence_score": 0.45, "epoch_count": 4,
+        "affects_outcome": True,
+        "source_episode_ids": ["EP-006"],
+        "first_seen": "2025-01-11T00:00:00", "last_seen": "2025-01-12T00:00:00",
+    },
+    # Fails attractor flag → should NOT promote
+    {
+        "type_id": "AT-005", "episode_type": "ANOMALY_SPIKE",
+        "attractor": False, "recurrence_score": 0.80, "epoch_count": 3,
+        "affects_outcome": True,
+        "source_episode_ids": [],
+        "first_seen": "2025-01-05T00:00:00", "last_seen": "2025-01-06T00:00:00",
+    },
+]
+
+
 def seed(graph_name: str = GRAPH_NAME):
     with get_session() as session:
         # Clear existing mock data for this graph
-        session.run("MATCH (e:Episode {graph_name: $g}) DETACH DELETE e",          g=graph_name)
-        session.run("MATCH (r:ResolvedEntity {graph_name: $g}) DETACH DELETE r",   g=graph_name)
-        session.run("MATCH (s:MotifSequence {graph_name: $g}) DETACH DELETE s",    g=graph_name)
+        session.run("MATCH (e:Episode {graph_name: $g}) DETACH DELETE e",              g=graph_name)
+        session.run("MATCH (r:ResolvedEntity {graph_name: $g}) DETACH DELETE r",       g=graph_name)
+        session.run("MATCH (s:MotifSequence {graph_name: $g}) DETACH DELETE s",        g=graph_name)
+        session.run("MATCH (a:AttractorEpisodeType {graph_name: $g}) DETACH DELETE a", g=graph_name)
 
         for ep in EPISODES:
             session.run(
@@ -150,10 +194,30 @@ def seed(graph_name: str = GRAPH_NAME):
                 **seq, graph_name=graph_name,
             )
 
+        for att in ATTRACTOR_TYPES:
+            session.run(
+                """
+                CREATE (a:AttractorEpisodeType {
+                    type_id:             $type_id,
+                    episode_type:        $episode_type,
+                    attractor:           $attractor,
+                    recurrence_score:    $recurrence_score,
+                    epoch_count:         $epoch_count,
+                    affects_outcome:     $affects_outcome,
+                    source_episode_ids:  $source_episode_ids,
+                    first_seen:          $first_seen,
+                    last_seen:           $last_seen,
+                    graph_name:          $graph_name
+                })
+                """,
+                **att, graph_name=graph_name,
+            )
+
     return {
         "episodes":  len(EPISODES),
         "entities":  len(ENTITIES),
         "sequences": len(MOTIF_SEQUENCES),
+        "attractors": len(ATTRACTOR_TYPES),
         "graph_name": graph_name,
     }
 
