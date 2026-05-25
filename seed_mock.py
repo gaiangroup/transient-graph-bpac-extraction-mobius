@@ -15,20 +15,93 @@ GRAPH_NAME = "mobius_graph"
 
 EPISODES = [
     # FRAUD_SEQUENCE cluster → maps to FRAUDULENT_COORDINATION BEv
-    {"episode_id": "EP-001", "episode_type": "FRAUD_SEQUENCE",     "status": "CONFIRMED", "first_seen": "2025-01-01T00:00:00", "last_seen": "2025-01-02T00:00:00"},
-    {"episode_id": "EP-002", "episode_type": "FRAUD_SEQUENCE",     "status": "CONFIRMED", "first_seen": "2025-01-03T00:00:00", "last_seen": "2025-01-04T00:00:00"},
-    {"episode_id": "EP-003", "episode_type": "FRAUD_SEQUENCE",     "status": "CONFIRMED", "first_seen": "2025-01-05T00:00:00", "last_seen": "2025-01-06T00:00:00"},
+    # user_alice initiates fraudulent transfers through user_bob targeting service_payments
+    {
+        "episode_id": "EP-001", "episode_type": "FRAUD_SEQUENCE", "status": "CONFIRMED",
+        "first_seen": "2025-01-01T00:00:00", "last_seen": "2025-01-02T00:00:00",
+        "initiator": "user_alice", "target": "service_payments",
+        "actors": ["user_alice", "user_bob", "service_payments"],
+        "amount": 15000.0,
+        "description": "user_alice transfers 15000 through user_bob into service_payments in a structured fraud sequence",
+    },
+    {
+        "episode_id": "EP-002", "episode_type": "FRAUD_SEQUENCE", "status": "CONFIRMED",
+        "first_seen": "2025-01-03T00:00:00", "last_seen": "2025-01-04T00:00:00",
+        "initiator": "user_alice", "target": "service_payments",
+        "actors": ["user_alice", "user_bob", "service_payments"],
+        "amount": 22000.0,
+        "description": "Repeat fraud sequence — user_alice routes 22000 via user_bob to service_payments",
+    },
+    {
+        "episode_id": "EP-003", "episode_type": "FRAUD_SEQUENCE", "status": "CONFIRMED",
+        "first_seen": "2025-01-05T00:00:00", "last_seen": "2025-01-06T00:00:00",
+        "initiator": "user_alice", "target": "service_payments",
+        "actors": ["user_alice", "user_bob", "service_payments"],
+        "amount": 18500.0,
+        "description": "Third fraud sequence — same actors, same route, amount 18500",
+    },
     # WASH_TRADING cluster → maps to CIRCULAR_VALUE_TRANSFER BEv
-    {"episode_id": "EP-004", "episode_type": "WASH_TRADING",       "status": "CONFIRMED", "first_seen": "2025-01-07T00:00:00", "last_seen": "2025-01-08T00:00:00"},
-    {"episode_id": "EP-005", "episode_type": "WASH_TRADING",       "status": "CONFIRMED", "first_seen": "2025-01-09T00:00:00", "last_seen": "2025-01-10T00:00:00"},
-    # COORDINATED_RATING → maps to COORDINATED_MANIPULATION BEv
-    {"episode_id": "EP-006", "episode_type": "COORDINATED_RATING", "status": "CONFIRMED", "first_seen": "2025-01-11T00:00:00", "last_seen": "2025-01-12T00:00:00"},
-    # PENDING — should NOT be promoted (not CONFIRMED)
-    {"episode_id": "EP-007", "episode_type": "FRAUD_SEQUENCE",     "status": "PENDING",   "first_seen": "2025-01-13T00:00:00", "last_seen": "2025-01-14T00:00:00"},
-    # DATA_EXFILTRATION → maps to UNAUTHORIZED_DATA_FLOW BEv
-    {"episode_id": "EP-008", "episode_type": "DATA_EXFILTRATION",  "status": "CONFIRMED", "first_seen": "2025-01-15T00:00:00", "last_seen": "2025-01-16T00:00:00"},
-    {"episode_id": "EP-009", "episode_type": "DATA_EXFILTRATION",  "status": "CONFIRMED", "first_seen": "2025-01-17T00:00:00", "last_seen": "2025-01-18T00:00:00"},
-    {"episode_id": "EP-010", "episode_type": "DATA_EXFILTRATION",  "status": "CONFIRMED", "first_seen": "2025-01-19T00:00:00", "last_seen": "2025-01-20T00:00:00"},
+    # user_alice and user_bob circulate money back and forth with no real purpose
+    {
+        "episode_id": "EP-004", "episode_type": "WASH_TRADING", "status": "CONFIRMED",
+        "first_seen": "2025-01-07T00:00:00", "last_seen": "2025-01-08T00:00:00",
+        "initiator": "user_alice", "target": "user_alice",
+        "actors": ["user_alice", "user_bob"],
+        "amount": 5000.0,
+        "description": "user_alice sends 5000 to user_bob, user_bob sends it back — circular with no net transfer",
+    },
+    {
+        "episode_id": "EP-005", "episode_type": "WASH_TRADING", "status": "CONFIRMED",
+        "first_seen": "2025-01-09T00:00:00", "last_seen": "2025-01-10T00:00:00",
+        "initiator": "user_bob", "target": "user_bob",
+        "actors": ["user_alice", "user_bob"],
+        "amount": 8000.0,
+        "description": "Same wash trading loop — 8000 circles between user_alice and user_bob again",
+    },
+    # COORDINATED_RATING → maps to COORDINATED_MANIPULATION BEv (only 1 — below min threshold)
+    {
+        "episode_id": "EP-006", "episode_type": "COORDINATED_RATING", "status": "CONFIRMED",
+        "first_seen": "2025-01-11T00:00:00", "last_seen": "2025-01-12T00:00:00",
+        "initiator": "user_alice", "target": "service_payments",
+        "actors": ["user_alice", "user_bob", "service_payments"],
+        "amount": 0.0,
+        "description": "user_alice and user_bob simultaneously submit identical ratings to service_payments — coordinated manipulation",
+    },
+    # PENDING — not yet verified, should NOT be promoted
+    {
+        "episode_id": "EP-007", "episode_type": "FRAUD_SEQUENCE", "status": "PENDING",
+        "first_seen": "2025-01-13T00:00:00", "last_seen": "2025-01-14T00:00:00",
+        "initiator": "user_anon_1", "target": "service_payments",
+        "actors": ["user_anon_1", "service_payments"],
+        "amount": 3200.0,
+        "description": "Suspected fraud by unknown actor user_anon_1 — under investigation, not yet confirmed",
+    },
+    # DATA_EXFILTRATION cluster → maps to UNAUTHORIZED_DATA_FLOW BEv
+    # user_bob exfiltrates data from service_payments to external sink
+    {
+        "episode_id": "EP-008", "episode_type": "DATA_EXFILTRATION", "status": "CONFIRMED",
+        "first_seen": "2025-01-15T00:00:00", "last_seen": "2025-01-16T00:00:00",
+        "initiator": "user_bob", "target": "service_payments",
+        "actors": ["user_bob", "service_payments"],
+        "amount": 0.0,
+        "description": "user_bob makes 47 rapid read calls to service_payments API — bulk data extraction pattern",
+    },
+    {
+        "episode_id": "EP-009", "episode_type": "DATA_EXFILTRATION", "status": "CONFIRMED",
+        "first_seen": "2025-01-17T00:00:00", "last_seen": "2025-01-18T00:00:00",
+        "initiator": "user_bob", "target": "service_payments",
+        "actors": ["user_bob", "service_payments"],
+        "amount": 0.0,
+        "description": "Second exfiltration attempt — user_bob accesses payment records outside business hours",
+    },
+    {
+        "episode_id": "EP-010", "episode_type": "DATA_EXFILTRATION", "status": "CONFIRMED",
+        "first_seen": "2025-01-19T00:00:00", "last_seen": "2025-01-20T00:00:00",
+        "initiator": "user_bob", "target": "service_payments",
+        "actors": ["user_bob", "service_payments"],
+        "amount": 0.0,
+        "description": "Third exfiltration — same pattern, user_bob exports full transaction history of service_payments",
+    },
 ]
 
 ENTITIES = [
@@ -153,6 +226,11 @@ def seed(graph_name: str = GRAPH_NAME):
                     status:       $status,
                     first_seen:   $first_seen,
                     last_seen:    $last_seen,
+                    initiator:    $initiator,
+                    target:       $target,
+                    actors:       $actors,
+                    amount:       $amount,
+                    description:  $description,
                     graph_name:   $graph_name
                 })
                 """,
